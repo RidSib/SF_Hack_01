@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { useShop } from "@/context/ShopContext";
 import ProductPair from "@/components/ProductPair";
@@ -13,8 +12,8 @@ export default function ShopPage() {
     <main className="relative flex min-h-screen flex-col bg-surface">
       {/* Header */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/5 bg-surface/80 px-6 py-3 backdrop-blur-xl">
-        <Link
-          href="/"
+        <a
+          href="https://talkshopai.lovable.app/"
           className="flex items-center gap-2 text-white/60 transition-colors hover:text-white"
         >
           <svg
@@ -31,9 +30,9 @@ export default function ShopPage() {
             />
           </svg>
           <span className="text-sm">Back</span>
-        </Link>
+        </a>
 
-        <h1 className="text-lg font-semibold gradient-text">
+        <h1 className="text-lg font-semibold text-white">
           TalkShop
         </h1>
 
