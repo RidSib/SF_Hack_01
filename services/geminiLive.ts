@@ -136,50 +136,71 @@ export class GeminiLiveClient {
   private session: Session | null = null;
   private cb: GeminiCallbacks | null = null;
   private ai: GoogleGenAI | null = null;
+  private connecting = false;
 
   async connect(
     apiKey: string,
     callbacks: GeminiCallbacks
   ) {
+    // Prevent duplicate connections (e.g. React
+    // 18 Strict Mode fires effects twice while
+    // the first async connect is still in-flight)
+    if (this.connecting || this.session) return;
+    this.connecting = true;
     this.cb = callbacks;
 
-    // v1alpha enables affective dialog
-    this.ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { apiVersion: "v1alpha" },
-    });
+    try {
+      // v1alpha enables affective dialog
+      this.ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          apiVersion: "v1alpha",
+        },
+      });
 
-    this.session = await this.ai.live.connect({
-      model: MODEL,
-      config: {
-        responseModalities: [Modality.AUDIO],
-        systemInstruction: SYSTEM_INSTRUCTION,
-        tools: TOOLS,
-        enableAffectiveDialog: true,
-        outputAudioTranscription: {},
-        inputAudioTranscription: {},
-      },
-      callbacks: {
-        onopen: () =>
-          console.log("[GeminiLive] connected"),
-        onmessage: (msg: LiveServerMessage) =>
-          this.handleMessage(msg),
-        onerror: (e: ErrorEvent) =>
-          console.error("[GeminiLive] error:", e),
-        onclose: () =>
-          console.log(
-            "[GeminiLive] disconnected"
-          ),
-      },
-    });
+      this.session =
+        await this.ai.live.connect({
+          model: MODEL,
+          config: {
+            responseModalities: [Modality.AUDIO],
+            systemInstruction:
+              SYSTEM_INSTRUCTION,
+            tools: TOOLS,
+            enableAffectiveDialog: true,
+            outputAudioTranscription: {},
+            inputAudioTranscription: {},
+          },
+          callbacks: {
+            onopen: () =>
+              console.log(
+                "[GeminiLive] connected"
+              ),
+            onmessage: (
+              msg: LiveServerMessage
+            ) => this.handleMessage(msg),
+            onerror: (e: ErrorEvent) =>
+              console.error(
+                "[GeminiLive] error:",
+                e
+              ),
+            onclose: () =>
+              console.log(
+                "[GeminiLive] disconnected"
+              ),
+          },
+        });
 
-    // Trigger the greeting
-    this.session.sendClientContent({
-      turns: "Hello, I just opened the shop. "
-        + "Please greet me briefly and ask "
-        + "what I'm looking for.",
-      turnComplete: true,
-    });
+      // Trigger the greeting
+      this.session.sendClientContent({
+        turns:
+          "Hello, I just opened the shop. "
+          + "Please greet me briefly and ask "
+          + "what I'm looking for.",
+        turnComplete: true,
+      });
+    } finally {
+      this.connecting = false;
+    }
   }
 
   /** Send PCM audio chunk (Int16) */
@@ -225,6 +246,7 @@ export class GeminiLiveClient {
   }
 
   disconnect() {
+    this.connecting = false;
     if (this.session) {
       this.session.close();
       this.session = null;
@@ -234,7 +256,8 @@ export class GeminiLiveClient {
   }
 
   get connected() {
-    return this.session !== null;
+    return this.session !== null
+      || this.connecting;
   }
 
   // -- Internal message handler --
