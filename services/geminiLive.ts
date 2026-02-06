@@ -56,7 +56,7 @@ export type GeminiCallbacks = {
 const MODEL =
   "gemini-2.5-flash-native-audio-preview-12-2025";
 
-const SYSTEM_INSTRUCTION = `You are ShopAI, \
+const SYSTEM_INSTRUCTION = `You are TalkShop, \
 a friendly and concise voice shopping assistant.
 You help users find products by showing them \
 two options at a time.

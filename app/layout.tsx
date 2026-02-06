@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ShopAI — Your Voice Shopping Assistant",
+  title: "TalkShop — Your Voice Shopping Assistant",
   description:
     "Find the perfect products with an AI-powered voice assistant",
 };

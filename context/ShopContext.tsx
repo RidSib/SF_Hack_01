@@ -82,8 +82,10 @@ export function ShopProvider({
   const [agentState, setAgentState] =
     useState<AgentState>("idle");
 
-  // Accumulate partial transcription fragments
-  const agentTransBuf = useRef("");
+  // Track the live-streaming agent message
+  const liveAgentId = useRef<string | null>(
+    null
+  );
   const userTransBuf = useRef("");
 
   // -- Tool calls --
@@ -126,7 +128,21 @@ export function ShopProvider({
   // -- Audio transcription callbacks --
   const handleOutputTranscript = useCallback(
     (text: string) => {
-      agentTransBuf.current += text;
+      setMessages((prev) => {
+        const id = liveAgentId.current;
+        if (id) {
+          // Append to existing live message
+          return prev.map((m) =>
+            m.id === id
+              ? { ...m, text: m.text + text }
+              : m
+          );
+        }
+        // Create a new live message
+        const msg = makeMsg("agent", text);
+        liveAgentId.current = msg.id;
+        return [...prev, msg];
+      });
     },
     []
   );
@@ -140,16 +156,9 @@ export function ShopProvider({
 
   // -- Turn lifecycle --
   const handleTurnComplete = useCallback(() => {
-    // Flush agent transcription buffer
-    const agentTxt =
-      agentTransBuf.current.trim();
-    if (agentTxt) {
-      setMessages((prev) => [
-        ...prev,
-        makeMsg("agent", agentTxt),
-      ]);
-    }
-    agentTransBuf.current = "";
+    // Agent transcript already streamed live;
+    // just reset the live message tracker.
+    liveAgentId.current = null;
 
     // Flush user transcription buffer
     const userTxt =
@@ -166,6 +175,7 @@ export function ShopProvider({
   }, []);
 
   const handleInterrupt = useCallback(() => {
+    liveAgentId.current = null;
     setAgentState("listening");
   }, []);
 
@@ -204,7 +214,7 @@ export function ShopProvider({
         makeMsg("user", text),
       ]);
       setAgentState("processing");
-      agentTransBuf.current = "";
+      liveAgentId.current = null;
       geminiSendText(text);
     },
     [geminiSendText]

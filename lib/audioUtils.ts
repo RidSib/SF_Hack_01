@@ -71,11 +71,10 @@ export function base64ToArrayBuffer(
 
 export class AudioPlayer {
   private ctx: AudioContext | null = null;
-  private queue: AudioBuffer[] = [];
-  private playing = false;
   private nextTime = 0;
+  private sources: AudioBufferSourceNode[] = [];
 
-  init() {
+  private init() {
     if (!this.ctx) {
       this.ctx = new AudioContext({
         sampleRate: 24000,
@@ -84,44 +83,41 @@ export class AudioPlayer {
     return this.ctx;
   }
 
+  /** Schedule a chunk for gapless playback
+   *  immediately — no waiting for previous
+   *  chunks to finish. */
   enqueue(pcmData: ArrayBuffer) {
     const ctx = this.init();
     const float32 = int16ToFloat32(pcmData);
-    const audioBuf = ctx.createBuffer(
-      1,
-      float32.length,
-      24000
+    const buf = ctx.createBuffer(
+      1, float32.length, 24000
     );
-    audioBuf.getChannelData(0).set(float32);
-    this.queue.push(audioBuf);
-    if (!this.playing) this.flush();
-  }
+    buf.getChannelData(0).set(float32);
 
-  private flush() {
-    const ctx = this.ctx;
-    if (!ctx || this.queue.length === 0) {
-      this.playing = false;
-      return;
-    }
-    this.playing = true;
-    const buf = this.queue.shift()!;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.connect(ctx.destination);
+
     const now = ctx.currentTime;
     const startAt = Math.max(
-      now,
-      this.nextTime
+      now, this.nextTime
     );
     src.start(startAt);
     this.nextTime = startAt + buf.duration;
-    src.onended = () => this.flush();
+
+    this.sources.push(src);
+    src.onended = () => {
+      const i = this.sources.indexOf(src);
+      if (i !== -1) this.sources.splice(i, 1);
+    };
   }
 
   stop() {
-    this.queue = [];
+    for (const s of this.sources) {
+      try { s.stop(); } catch { /* noop */ }
+    }
+    this.sources = [];
     this.nextTime = 0;
-    this.playing = false;
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;
@@ -129,9 +125,11 @@ export class AudioPlayer {
   }
 
   clear() {
-    this.queue = [];
+    for (const s of this.sources) {
+      try { s.stop(); } catch { /* noop */ }
+    }
+    this.sources = [];
     this.nextTime = 0;
-    this.playing = false;
   }
 }
 
@@ -222,15 +220,28 @@ export class MicCapture {
     );
   }
 
+  /** Release mic hardware so OS indicator
+   *  turns off. Keeps onChunk so unmute()
+   *  can restart the pipeline. */
   mute() {
     this._muted = true;
+    this.teardown(false);
   }
 
-  unmute() {
+  /** Re-acquire mic and resume streaming. */
+  async unmute() {
+    if (!this._muted) return;
     this._muted = false;
+    if (this.onChunk) await this.start(
+      this.onChunk
+    );
   }
 
   stop() {
+    this.teardown(true);
+  }
+
+  private teardown(full: boolean) {
     this.processor?.disconnect();
     this.source?.disconnect();
     this.stream
@@ -241,7 +252,9 @@ export class MicCapture {
     this.stream = null;
     this.processor = null;
     this.source = null;
-    this.onChunk = null;
-    this._muted = false;
+    if (full) {
+      this.onChunk = null;
+      this._muted = false;
+    }
   }
 }

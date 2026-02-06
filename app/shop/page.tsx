@@ -34,7 +34,7 @@ export default function ShopPage() {
         </Link>
 
         <h1 className="text-lg font-semibold gradient-text">
-          ShopAI
+          TalkShop
         </h1>
 
         {/* Status pill */}

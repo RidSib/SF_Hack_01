@@ -71,10 +71,6 @@ export default function AudioBar() {
     }
   }, [messages]);
 
-  // Auto-open chat on first message
-  useEffect(() => {
-    if (messages.length > 0) setChatOpen(true);
-  }, [messages]);
 
   const handleSend = () => {
     const trimmed = text.trim();

@@ -44,8 +44,8 @@ export function useAudioRecorder(
     setState("muted");
   }, []);
 
-  const unmute = useCallback(() => {
-    mic.current?.unmute();
+  const unmute = useCallback(async () => {
+    await mic.current?.unmute();
     setState("active");
   }, []);
 
