@@ -1,13 +1,17 @@
 export type Product = {
-  id: string;
+  product_id: string;
   name: string;
-  description: string;
-  price: number;
+  brand: string | null;
   category: string;
-  color: string;
-  image: string;
-  rating: number;
-  tags: string[];
+  sub_category: string | null;
+  price: number | null;
+  currency: string | null;
+  color: string | null;
+  material: string | null;
+  attributes: Record<string, unknown>;
+  image_path: string | null;
+  product_url: string | null;
+  product_summary: string | null;
 };
 
 export type MessageRole = "user" | "agent";
@@ -20,7 +24,10 @@ export type Message = {
 };
 
 export type ToolCall = {
-  name: "show_products" | "highlight_product";
+  name:
+    | "show_products"
+    | "highlight_product"
+    | "search_products";
   args: Record<string, unknown>;
 };
 

@@ -90,13 +90,15 @@ export function useGeminiLive(
       },
       onOutputTranscript: (text) => {
         if (!mountedRef.current) return;
-        optsRef.current
-          .onOutputTranscript(text);
+        optsRef.current.onOutputTranscript(
+          text
+        );
       },
       onInputTranscript: (text) => {
         if (!mountedRef.current) return;
-        optsRef.current
-          .onInputTranscript(text);
+        optsRef.current.onInputTranscript(
+          text
+        );
       },
       onInterrupt: () => {
         if (!mountedRef.current) return;
@@ -140,13 +142,29 @@ export function useGeminiLive(
     []
   );
 
-  const sendAudioStreamEnd = useCallback(() => {
-    clientRef.current?.sendAudioStreamEnd();
-  }, []);
+  const sendAudioStreamEnd =
+    useCallback(() => {
+      clientRef.current?.sendAudioStreamEnd();
+    }, []);
 
   const sendText = useCallback(
     (text: string) => {
       clientRef.current?.sendText(text);
+    },
+    []
+  );
+
+  const sendToolResponse = useCallback(
+    (
+      responses: {
+        id: string;
+        name: string;
+        response: Record<string, unknown>;
+      }[]
+    ) => {
+      clientRef.current?.sendToolResponse(
+        responses
+      );
     },
     []
   );
@@ -166,5 +184,6 @@ export function useGeminiLive(
     sendAudio,
     sendAudioStreamEnd,
     sendText,
+    sendToolResponse,
   };
 }

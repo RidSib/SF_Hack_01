@@ -1,7 +1,7 @@
 /**
  * Gemini Live API client — native audio model.
  *
- * Model: gemini-2.5-flash-native-audio-preview-12-2025
+ * Model: gemini-2.5-flash-native-audio-preview
  * Features: affective dialog, audio transcription,
  *           function calling, VAD, thinking.
  */
@@ -15,7 +15,6 @@ import {
   type FunctionDeclaration,
   type Tool,
 } from "@google/genai";
-import { products } from "@/lib/products";
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -28,6 +27,7 @@ export type OnAudioChunkCb = (
 ) => void;
 export type OnToolCallCb = (
   calls: {
+    id: string;
     name: string;
     args: Record<string, unknown>;
   }[]
@@ -54,39 +54,107 @@ export type GeminiCallbacks = {
 // -- Config --
 
 const MODEL =
-  "gemini-2.5-flash-native-audio-preview-12-2025";
+  "gemini-2.5-flash-native-audio-preview" +
+  "-12-2025";
 
 const SYSTEM_INSTRUCTION = `You are TalkShop, \
 a friendly and concise voice shopping assistant.
-You help users find products by showing them \
-two options at a time.
-Use the show_products tool to display products.
-Use the highlight_product tool to highlight one.
+You help users find products from a real catalog.
 
-Available products (use these exact IDs):
-${JSON.stringify(
-  products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    price: p.price,
-    category: p.category,
-    color: p.color,
-    rating: p.rating,
-    tags: p.tags,
-  })),
-  null,
-  0
-)}
+Catalog info:
+- Categories use singular form: "shoe" (not \
+"shoes"). The catalog currently focuses on \
+shoes/sneakers.
+- Brands include Nike.
+- Use the "text" parameter for broad searches.
+
+Tools:
+- search_products: Search the product catalog. \
+Call this first. Prefer the "text" param for \
+broad queries; use specific filters only when \
+the user mentions them explicitly.
+- show_products: Display exactly 2 products \
+side by side for the user to compare.
+- highlight_product: Highlight one product.
+
+Flow:
+1. When the user asks for products, call \
+search_products with relevant filters.
+2. Pick exactly 2 from the results and call \
+show_products with their product IDs.
+3. When user says "left"/"first", keep that \
+product and search or pick a replacement for \
+the other.
+4. When user says "right"/"second", same but \
+keep the right one.
 
 Rules:
-- Always show exactly 2 products via show_products
-- "left"/"first" → keep that, replace other
-- "right"/"second" → keep that, replace other
-- Filter by color, price, category, tags
+- Always show exactly 2 products via \
+show_products
+- You can filter by category, brand, colors, \
+materials, style_tags, use_cases, price range, \
+or free-text search
 - Be conversational, brief, and helpful
 - Start by greeting and asking what they want`;
 
 // -- Tool declarations --
+
+const searchProductsFn: FunctionDeclaration = {
+  name: "search_products",
+  description:
+    "Search the product catalog with filters",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      category: {
+        type: Type.STRING,
+        description: "Product category",
+      },
+      brand: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Brand names to filter",
+      },
+      colors: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Color filters",
+      },
+      materials: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Material filters",
+      },
+      style_tags: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Style tag filters",
+      },
+      use_cases: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Use case filters",
+      },
+      price_min: {
+        type: Type.NUMBER,
+        description: "Minimum price (USD)",
+      },
+      price_max: {
+        type: Type.NUMBER,
+        description: "Maximum price (USD)",
+      },
+      text: {
+        type: Type.STRING,
+        description: "Free-text search query",
+      },
+      limit: {
+        type: Type.NUMBER,
+        description:
+          "Max results (default 10)",
+      },
+    },
+  },
+};
 
 const showProductsFn: FunctionDeclaration = {
   name: "show_products",
@@ -106,24 +174,28 @@ const showProductsFn: FunctionDeclaration = {
   },
 };
 
-const highlightProductFn: FunctionDeclaration = {
-  name: "highlight_product",
-  description: "Highlight a specific product",
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      productId: {
-        type: Type.STRING,
-        description: "The product ID to highlight",
+const highlightProductFn: FunctionDeclaration =
+  {
+    name: "highlight_product",
+    description:
+      "Highlight a specific product",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        productId: {
+          type: Type.STRING,
+          description:
+            "The product ID to highlight",
+        },
       },
+      required: ["productId"],
     },
-    required: ["productId"],
-  },
-};
+  };
 
 const TOOLS: Tool[] = [
   {
     functionDeclarations: [
+      searchProductsFn,
       showProductsFn,
       highlightProductFn,
     ],
@@ -142,9 +214,6 @@ export class GeminiLiveClient {
     apiKey: string,
     callbacks: GeminiCallbacks
   ) {
-    // Prevent duplicate connections (e.g. React
-    // 18 Strict Mode fires effects twice while
-    // the first async connect is still in-flight)
     if (this.connecting || this.session) return;
     this.connecting = true;
     this.cb = callbacks;
@@ -162,7 +231,9 @@ export class GeminiLiveClient {
         await this.ai.live.connect({
           model: MODEL,
           config: {
-            responseModalities: [Modality.AUDIO],
+            responseModalities: [
+              Modality.AUDIO,
+            ],
             systemInstruction:
               SYSTEM_INSTRUCTION,
             tools: TOOLS,
@@ -193,9 +264,9 @@ export class GeminiLiveClient {
       // Trigger the greeting
       this.session.sendClientContent({
         turns:
-          "Hello, I just opened the shop. "
-          + "Please greet me briefly and ask "
-          + "what I'm looking for.",
+          "Hello, I just opened the shop. " +
+          "Please greet me briefly and ask " +
+          "what I'm looking for.",
         turnComplete: true,
       });
     } finally {
@@ -214,7 +285,7 @@ export class GeminiLiveClient {
     });
   }
 
-  /** Signal end of audio stream (flushes VAD) */
+  /** Signal end of audio stream */
   sendAudioStreamEnd() {
     if (!this.session) return;
     this.session.sendRealtimeInput({
@@ -256,8 +327,9 @@ export class GeminiLiveClient {
   }
 
   get connected() {
-    return this.session !== null
-      || this.connecting;
+    return (
+      this.session !== null || this.connecting
+    );
   }
 
   // -- Internal message handler --
@@ -270,60 +342,50 @@ export class GeminiLiveClient {
 
     const sc = msg.serverContent;
     if (sc) {
-      // Interrupted by user speech (barge-in)
       if (sc.interrupted) cb.onInterrupt();
 
-      // Model turn parts: audio / text
       if (sc.modelTurn?.parts) {
-        for (const part of sc.modelTurn.parts) {
-          if (part.inlineData?.data) {
+        for (const p of sc.modelTurn.parts) {
+          if (p.inlineData?.data) {
             cb.onAudioChunk(
               base64ToArrayBuffer(
-                part.inlineData.data
+                p.inlineData.data
               )
             );
           }
-          if (part.text) cb.onText(part.text);
+          if (p.text) cb.onText(p.text);
         }
       }
 
-      // Output transcription (agent speech→text)
       const ot = sc.outputTranscription as
         | { text?: string }
         | undefined;
-      if (ot?.text) cb.onOutputTranscript(ot.text);
+      if (ot?.text)
+        cb.onOutputTranscript(ot.text);
 
-      // Input transcription (user speech→text)
       const it = sc.inputTranscription as
         | { text?: string }
         | undefined;
-      if (it?.text) cb.onInputTranscript(it.text);
+      if (it?.text)
+        cb.onInputTranscript(it.text);
 
-      // Turn complete
       if (sc.turnComplete) cb.onTurnComplete();
     }
 
-    // Tool calls
+    // Tool calls — delegate to caller
+    // (caller must send tool response)
     if (msg.toolCall?.functionCalls) {
       const calls: FunctionCall[] =
         msg.toolCall.functionCalls;
 
       cb.onToolCall(
         calls.map((fc) => ({
+          id: fc.id ?? "",
           name: fc.name ?? "",
           args: (fc.args ?? {}) as Record<
             string,
             unknown
           >,
-        }))
-      );
-
-      // Respond so model can continue speaking
-      this.sendToolResponse(
-        calls.map((fc) => ({
-          id: fc.id ?? "",
-          name: fc.name ?? "",
-          response: { result: "ok" },
         }))
       );
     }
